@@ -11,6 +11,7 @@
 #include <cstdint>
 #include <string>
 #include <vector>
+#include <unordered_map>
 
 #include "statistic.h"
 
@@ -25,17 +26,10 @@ private:
     /// The join column containing the keys
     std::vector<uint64_t *> columns_;
 
-    // Data characteristics
-
-    std::vector<uint64_t> maxx_;
-    std::vector<uint64_t> minn_;
-
 public:
     /// Constructor without mmap
     Relation(uint64_t size, std::vector<uint64_t *> &&columns)
             : owns_memory_(true), size_(size), columns_(columns) {
-        maxx_.resize(columns.size());
-        minn_.resize(columns.size());
     }
 
     /// Constructor using mmap
@@ -71,13 +65,8 @@ public:
 
     std::vector<ColumnStatistics> statistics;
 
-    void setMaxx(uint64_t, uint64_t);
-
-    void setMinn(uint64_t, uint64_t);
-
-    const uint64_t getMaxx(uint64_t col_id) const { return maxx_[col_id]; }
-
-    const uint64_t getMinn(uint64_t col_id) const { return minn_[col_id]; }
+    // Index
+    std::vector<std::unordered_multimap<uint64_t, uint64_t >> indexs;
 
 private:
     /// Loads data from a file

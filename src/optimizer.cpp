@@ -13,9 +13,12 @@ void Optimizer::preparation(Joiner &joiner) {
     for (auto &relation: joiner.getRelations()) {
         for (auto &col: relation.columns()) {
             std::map<uint64_t, uint64_t> count;
+//            std::unordered_multimap<uint64_t, uint64_t> index;
             for (uint64_t i = 0; i < relation.size(); ++i) {
                 count[col[i]]++;
+//                index.insert({col[i], i});
             }
+
             auto minn = count.begin()->first;
             auto maxx = count.rbegin()->first;
 
@@ -28,6 +31,7 @@ void Optimizer::preparation(Joiner &joiner) {
 //            auto maxx = *std::max_element(col, col + relation.size());
 //            auto minn = *std::min_element(col, col + relation.size());
             relation.statistics.emplace_back(maxx, minn, ndv, alike, relation.size());
+//            relation.indexs.emplace_back(index);
         }
 //        for (uint64_t i = 0; i < relation.columns().size(); i++) {
 //            relation.setMaxx(i, *std::max_element(relation.columns()[i], relation.columns()[i] + relation.size()));

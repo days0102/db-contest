@@ -15,12 +15,12 @@
 #include "parser.h"
 #include "optimizer.h"
 
+Joiner joiner;
+
 int main(int argc, char *argv[]) {
     std::ios::sync_with_stdio(false);
     std::cin.tie();
     std::cout.tie();
-
-    Joiner joiner;
 
     // Read join relations
     std::string line;
@@ -59,6 +59,8 @@ int main(int argc, char *argv[]) {
             std::mutex latch_;
             std::vector<std::thread> threads;
             std::vector<std::string> result(lines.size());
+            
+            auto nt = std::thread::hardware_concurrency();
             for (uint64_t ix = 0; ix < 4; ix++) {
                 threads.emplace_back([&] {
                     for (;;) {

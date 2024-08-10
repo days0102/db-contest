@@ -1,7 +1,11 @@
 #include "operators.h"
-
+#include "joiner.h"
 #include <cassert>
 #include <thread>
+
+class Joiner;
+
+extern Joiner joiner;
 
 // Get materialized results
 std::vector<uint64_t *> Operator::getResults() {
@@ -156,95 +160,126 @@ void Join::run() {
     auto left_col_id = left_->resolve(p_info_.left);
     auto right_col_id = right_->resolve(p_info_.right);
 
+    if (left_->result_size() + right_->result_size() < left_->result_size() * right_->result_size()) {
+//        auto &rel_id = p_info_.right.rel_id;
+//        auto &relation = joiner.getRelation(rel_id);
+//        auto index = relation.indexs[p_info_.right.col_id];
+//        auto left_key_column = left_input_data[left_col_id];
+//        for (uint64_t i = 0, limit = i + left_->result_size(); i != limit; ++i) {
+//            auto range = index.equal_range(left_key_column[i]);
+//            for (auto iter = range.first; iter != range.second; ++iter) {
+//                copy2Result(i, iter->second);
+//            }
+//        }
+
+        // Build phase
+        auto left_key_column = left_input_data[left_col_id];
+        hash_table_.reserve(left_->result_size() * 2);
+        for (uint64_t i = 0, limit = i + left_->result_size(); i != limit; ++i) {
+            hash_table_.emplace(left_key_column[i], i);
+        }
+        // Probe phase
+        auto right_key_column = right_input_data[right_col_id];
+        for (uint64_t i = 0, limit = i + right_->result_size(); i != limit; ++i) {
+            auto rightKey = right_key_column[i];
+            auto range = hash_table_.equal_range(rightKey);
+            for (auto iter = range.first; iter != range.second; ++iter) {
+                copy2Result(iter->second, i);
+            }
+        }
+    } else {
+        auto left_key_column = left_input_data[left_col_id];
+        auto right_key_column = right_input_data[right_col_id];
+        for (uint64_t i = 0, li = i + left_->result_size(); i != li; ++i) {
+            for (uint64_t j = 0, lj = j + right_->result_size(); j != lj; ++j) {
+                if (left_key_column[i] == right_key_column[j]) {
+                    copy2Result(i, j);
+                }
+            }
+        }
+    }
+
+/*
+#define NUM_THREAD 2
+    auto right_key_column = right_input_data[right_col_id];
     // Build phase
     auto left_key_column = left_input_data[left_col_id];
     hash_table_.reserve(left_->result_size() * 2);
     for (uint64_t i = 0, limit = i + left_->result_size(); i != limit; ++i) {
         hash_table_.emplace(left_key_column[i], i);
     }
-    // Probe phase
-    auto right_key_column = right_input_data[right_col_id];
-    for (uint64_t i = 0, limit = i + right_->result_size(); i != limit; ++i) {
-        auto rightKey = right_key_column[i];
-        auto range = hash_table_.equal_range(rightKey);
-        for (auto iter = range.first; iter != range.second; ++iter) {
-            copy2Result(iter->second, i);
+    // M-R
+    auto batch = right_->result_size() / NUM_THREAD;
+    auto size = right_->result_size();
+    std::vector<std::pair<uint64_t, uint64_t >> thread_right_result[NUM_THREAD];
+
+//    std::vector<std::thread> threads(NUM_THREAD);
+//    for (uint64_t t = 0; t < NUM_THREAD; t++) {
+//        threads.emplace_back([&, t]() -> void {
+//            for (uint64_t i = batch * t, limit = i + batch;
+//                 t == NUM_THREAD - 1 ? i < size : i != limit && i < size; ++i) {
+//                auto rightKey = right_key_column[i];
+//                auto range = hash_table_.equal_range(rightKey);
+//                for (auto iter = range.first; iter != range.second; ++iter) {
+////                copy2Result(iter->second, i);
+//                    thread_right_result[t].emplace_back(iter->second, i);
+//                }
+//            }
+//        });
+//    }
+
+    std::thread t0([&]() -> void {
+        for (uint64_t i = 0, limit = i + batch; i != limit && i < size; ++i) {
+            auto rightKey = right_key_column[i];
+            auto range = hash_table_.equal_range(rightKey);
+            for (auto iter = range.first; iter != range.second; ++iter) {
+//                copy2Result(iter->second, i);
+                thread_right_result[0].emplace_back(iter->second, i);
+            }
+        }
+    });
+    std::thread t1([&]() -> void {
+        for (uint64_t i = batch, limit = i + batch; i != limit && i < size; ++i) {
+            auto rightKey = right_key_column[i];
+            auto range = hash_table_.equal_range(rightKey);
+            for (auto iter = range.first; iter != range.second; ++iter) {
+//                copy2Result(iter->second, i);
+                thread_right_result[1].emplace_back(iter->second, i);
+            }
+        }
+    });
+    std::thread t2([&]() -> void {
+        for (uint64_t i = batch * 2, limit = i + batch; i != limit && i < size; ++i) {
+            auto rightKey = right_key_column[i];
+            auto range = hash_table_.equal_range(rightKey);
+            for (auto iter = range.first; iter != range.second; ++iter) {
+//                copy2Result(iter->second, i);
+                thread_right_result[2].emplace_back(iter->second, i);
+            }
+        }
+    });
+    std::thread t3([&]() -> void {
+        for (uint64_t i = batch * 3; i < size; ++i) {
+            auto rightKey = right_key_column[i];
+            auto range = hash_table_.equal_range(rightKey);
+            for (auto iter = range.first; iter != range.second; ++iter) {
+//                copy2Result(iter->second, i);
+                thread_right_result[3].emplace_back(iter->second, i);
+            }
+        }
+    });
+
+    t0.join();
+    t1.join();
+    t2.join();
+    t3.join();
+
+    for (auto &thread_res: thread_right_result) {
+        for (auto &[lhs, rhs]: thread_res) {
+            copy2Result(lhs, rhs);
         }
     }
-//
-//#define NUM_THREAD 4
-//
-//    // M-R
-//    auto batch = right_->result_size() / NUM_THREAD;
-//    auto size = right_->result_size();
-//    std::vector<std::pair<uint64_t, uint64_t >> thread_right_result[NUM_THREAD];
-//
-////    std::vector<std::thread> threads(NUM_THREAD);
-////    for (uint64_t t = 0; t < NUM_THREAD; t++) {
-////        threads.emplace_back([&, t]() -> void {
-////            for (uint64_t i = batch * t, limit = i + batch;
-////                 t == NUM_THREAD - 1 ? i < size : i != limit && i < size; ++i) {
-////                auto rightKey = right_key_column[i];
-////                auto range = hash_table_.equal_range(rightKey);
-////                for (auto iter = range.first; iter != range.second; ++iter) {
-//////                copy2Result(iter->second, i);
-////                    thread_right_result[t].emplace_back(iter->second, i);
-////                }
-////            }
-////        });
-////    }
-//
-//    std::thread t0([&]() -> void {
-//        for (uint64_t i = 0, limit = i + batch; i != limit && i < size; ++i) {
-//            auto rightKey = right_key_column[i];
-//            auto range = hash_table_.equal_range(rightKey);
-//            for (auto iter = range.first; iter != range.second; ++iter) {
-////                copy2Result(iter->second, i);
-//                thread_right_result[0].emplace_back(iter->second, i);
-//            }
-//        }
-//    });
-//    std::thread t1([&]() -> void {
-//        for (uint64_t i = batch, limit = i + batch; i != limit && i < size; ++i) {
-//            auto rightKey = right_key_column[i];
-//            auto range = hash_table_.equal_range(rightKey);
-//            for (auto iter = range.first; iter != range.second; ++iter) {
-////                copy2Result(iter->second, i);
-//                thread_right_result[1].emplace_back(iter->second, i);
-//            }
-//        }
-//    });
-//    std::thread t2([&]() -> void {
-//        for (uint64_t i = batch * 2, limit = i + batch; i != limit && i < size; ++i) {
-//            auto rightKey = right_key_column[i];
-//            auto range = hash_table_.equal_range(rightKey);
-//            for (auto iter = range.first; iter != range.second; ++iter) {
-////                copy2Result(iter->second, i);
-//                thread_right_result[2].emplace_back(iter->second, i);
-//            }
-//        }
-//    });
-//    std::thread t3([&]() -> void {
-//        for (uint64_t i = batch * 3; i < size; ++i) {
-//            auto rightKey = right_key_column[i];
-//            auto range = hash_table_.equal_range(rightKey);
-//            for (auto iter = range.first; iter != range.second; ++iter) {
-////                copy2Result(iter->second, i);
-//                thread_right_result[3].emplace_back(iter->second, i);
-//            }
-//        }
-//    });
-//
-//    t0.join();
-//    t1.join();
-//    t2.join();
-//    t3.join();
-//
-//    for (auto &thread_res: thread_right_result) {
-//        for (auto &[lhs, rhs]: thread_res) {
-//            copy2Result(lhs, rhs);
-//        }
-//    }
+   */
 }
 
 // Copy to result

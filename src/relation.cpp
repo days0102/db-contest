@@ -93,8 +93,6 @@ void Relation::loadRelation(const char *file_name) {
 // Constructor that loads relation_ from disk
 Relation::Relation(const char *file_name) : owns_memory_(false), size_(0) {
     loadRelation(file_name);
-    maxx_.resize(columns_.size());
-    minn_.resize(columns_.size());
 }
 
 // Destructor
@@ -105,6 +103,3 @@ Relation::~Relation() {
     }
 }
 
-void Relation::setMaxx(uint64_t col_id, uint64_t maxx) { maxx_[col_id] = maxx; }
-
-void Relation::setMinn(uint64_t col_id, uint64_t minn) { minn_[col_id] = minn; }
